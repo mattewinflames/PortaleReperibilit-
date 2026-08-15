@@ -1,0 +1,85 @@
+{
+  "entities": {
+    "Shift": {
+      "title": "Shift",
+      "description": "A shift record for a specific day.",
+      "type": "object",
+      "properties": {
+        "day": { "type": "integer", "description": "Start day of the month (1-31)" },
+        "month": { "type": "integer", "description": "Start month index (0-11)" },
+        "year": { "type": "integer", "description": "Start year (e.g., 2024)" },
+        "startTime": { "type": "string", "format": "time", "description": "Start time (HH:mm)" },
+        "endTime": { "type": "string", "format": "time", "description": "End time (HH:mm)" },
+        "endDay": { "type": "integer", "description": "End day of the month" },
+        "endMonth": { "type": "integer", "description": "End month index" },
+        "endYear": { "type": "integer", "description": "End year" },
+        "hours": { "type": "number", "description": "Total hours of on-call duty (calculated)" },
+        "type": { "type": "string", "enum": ["regular", "weekend"], "description": "Type of shift" },
+        "notes": { "type": "string", "description": "Optional notes for the shift" }
+      },
+      "required": ["day", "month", "year", "startTime", "endTime", "endDay", "endMonth", "endYear", "hours", "type"]
+    },
+    "Intervention": {
+      "title": "Intervention",
+      "description": "An active technical intervention record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier" },
+        "title": { "type": "string", "description": "Title or description of the intervention" },
+        "location": { "type": "string", "description": "Client or site location" },
+        "startTime": { "type": "string", "format": "time", "description": "Start time (HH:mm)" },
+        "endTime": { "type": "string", "format": "time", "description": "End time (HH:mm)" },
+        "type": { "type": "string", "enum": ["critical", "security", "maintenance"], "description": "Severity of the intervention" },
+        "extraPay": { "type": "string", "description": "Label for extra pay or compensation" },
+        "dateLabel": { "type": "string", "description": "Formatted date label (e.g., '12 Mag')" },
+        "day": { "type": "integer", "description": "Day of the month" },
+        "month": { "type": "integer", "description": "Month index" },
+        "year": { "type": "integer", "description": "Year" },
+        "notes": { "type": "string", "description": "Optional notes for the intervention" }
+      },
+      "required": ["title", "location", "startTime", "endTime", "type", "day", "month", "year"]
+    },
+    "Settings": {
+      "title": "Settings",
+      "description": "User-specific configuration for rates and taxes.",
+      "type": "object",
+      "properties": {
+        "onCallRate": { "type": "string", "description": "Hourly rate for on-call duty (e.g., '12,50')" },
+        "interventionRate": { "type": "string", "description": "Hourly rate for interventions (e.g., '45,00')" },
+        "taxPercentage": { "type": "integer", "description": "Tax percentage for net calculation" }
+      },
+      "required": ["onCallRate", "interventionRate", "taxPercentage"]
+    },
+    "SolidarityDate": {
+      "title": "SolidarityDate",
+      "description": "A date marked as solidarity from an external calendar.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier" },
+        "day": { "type": "integer", "description": "Day of the month" },
+        "month": { "type": "integer", "description": "Month index" },
+        "year": { "type": "integer", "description": "Year" },
+        "dateStr": { "type": "string", "description": "YYYY-MM-DD format" }
+      },
+      "required": ["day", "month", "year", "dateStr"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/shifts/{shiftId}": {
+      "schema": "Shift",
+      "description": "Collection of shifts for a specific user."
+    },
+    "/users/{userId}/interventions/{interventionId}": {
+      "schema": "Intervention",
+      "description": "Collection of interventions for a specific user."
+    },
+    "/users/{userId}/settings/current": {
+      "schema": "Settings",
+      "description": "User-specific settings document."
+    },
+    "/users/{userId}/solidarityDates/{dateId}": {
+      "schema": "SolidarityDate",
+      "description": "Collection of solidarity dates for a specific user."
+    }
+  }
+}

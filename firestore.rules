@@ -1,0 +1,181 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =========================================================================
+    // MODELLO DATI
+    // =========================================================================
+    //
+    //  /admins/{uid}                              (documento vuoto: la sola
+    //                                              esistenza conferisce il ruolo)
+    //  /users/{uid}                               (documento profilo, non usato
+    //                                              dall'app)
+    //  /users/{uid}/shifts/{shiftId}              turni di reperibilità
+    //  /users/{uid}/interventions/{id}            interventi
+    //  /users/{uid}/settings/current              tariffe e aliquota
+    //  /users/{uid}/solidarityDates/{id}          giorni di solidarietà
+    //
+    // =========================================================================
+    // HELPER
+    // =========================================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Nessuna email hardcoded, nessun get() su un documento che non può esistere.
+    //
+    // Il custom claim viene valutato per primo e costa zero letture. exists()
+    // restituisce false sui documenti mancanti, mentre get().data.role faceva
+    // fallire l'intera valutazione della regola.
+    //
+    // Per nominare un admin: crea un documento vuoto in /admins/{uid} dalla
+    // Firebase Console. Nessuno può crearlo dal client (vedi regole in fondo).
+    function isAdmin() {
+      return isAuthenticated() && (
+        ('admin' in request.auth.token && request.auth.token.admin == true) ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function requiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function onlyFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // "HH:mm" con ore 00-23 e minuti 00-59. La vecchia regex \d{1,2}:\d{2}
+    // accettava "99:99". Lo zero iniziale resta opzionale ("8:00") per non
+    // rifiutare l'aggiornamento dei documenti legacy.
+    function isTimeString(value) {
+      return value is string && value.matches('^([0-9]|[01][0-9]|2[0-3]):[0-5][0-9]$');
+    }
+
+    // Importi in formato italiano o anglosassone: "12,50" / "12.50" / "45"
+    function isRateString(value) {
+      return value is string && value.matches('^[0-9]{1,5}([.,][0-9]{1,2})?$');
+    }
+
+    function isCalendarYear(value) {
+      return value is int && value >= 2000 && value <= 2100;
+    }
+
+    function isMonthIndex(value) {
+      return value is int && value >= 0 && value <= 11;
+    }
+
+    function isDayNumber(value) {
+      return value is int && value >= 1 && value <= 31;
+    }
+
+    function isOptionalNotes(data) {
+      return !('notes' in data) || data.notes == null ||
+        (data.notes is string && data.notes.size() <= 500);
+    }
+
+    // =========================================================================
+    // VALIDATORI
+    // =========================================================================
+
+    function isValidShift(data) {
+      return requiredFields(['day', 'month', 'year', 'startTime', 'endTime',
+                             'endDay', 'endMonth', 'endYear', 'hours', 'type']) &&
+        onlyFields(['day', 'month', 'year', 'startTime', 'endTime',
+                    'endDay', 'endMonth', 'endYear', 'hours', 'type', 'notes']) &&
+        isDayNumber(data.day) && isMonthIndex(data.month) && isCalendarYear(data.year) &&
+        isDayNumber(data.endDay) && isMonthIndex(data.endMonth) && isCalendarYear(data.endYear) &&
+        isTimeString(data.startTime) && isTimeString(data.endTime) &&
+        // Un turno può durare più giorni (ven 18:00 -> sab 24:00 = 30h;
+        // dom 00:00 -> lun 08:00 = 32h) ma non settimane.
+        data.hours is number && data.hours >= 0 && data.hours <= 200 &&
+        data.type in ['regular', 'weekend'] &&
+        isOptionalNotes(data);
+    }
+
+    function isValidIntervention(data) {
+      return requiredFields(['id', 'title', 'location', 'startTime', 'endTime',
+                             'type', 'day', 'month', 'year']) &&
+        onlyFields(['id', 'title', 'location', 'startTime', 'endTime', 'type',
+                    'extraPay', 'dateLabel', 'day', 'month', 'year', 'notes']) &&
+        data.id is string && data.id.size() > 0 && data.id.size() <= 128 &&
+        data.title is string && data.title.size() > 0 && data.title.size() <= 100 &&
+        data.location is string && data.location.size() <= 100 &&
+        isTimeString(data.startTime) && isTimeString(data.endTime) &&
+        data.type in ['critical', 'security', 'maintenance'] &&
+        isDayNumber(data.day) && isMonthIndex(data.month) && isCalendarYear(data.year) &&
+        (!('extraPay' in data) || (data.extraPay is string && data.extraPay.size() <= 32)) &&
+        (!('dateLabel' in data) || (data.dateLabel is string && data.dateLabel.size() <= 32)) &&
+        isOptionalNotes(data);
+    }
+
+    function isValidSettings(data) {
+      return requiredFields(['onCallRate', 'interventionRate', 'taxPercentage']) &&
+        onlyFields(['onCallRate', 'interventionRate', 'taxPercentage']) &&
+        isRateString(data.onCallRate) &&
+        isRateString(data.interventionRate) &&
+        data.taxPercentage is int && data.taxPercentage >= 0 && data.taxPercentage <= 100;
+    }
+
+    function isValidSolidarityDate(data) {
+      return requiredFields(['id', 'day', 'month', 'year', 'dateStr']) &&
+        onlyFields(['id', 'day', 'month', 'year', 'dateStr']) &&
+        data.id is string && data.id.size() <= 128 &&
+        isDayNumber(data.day) && isMonthIndex(data.month) && isCalendarYear(data.year) &&
+        data.dateStr is string && data.dateStr.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+
+    // =========================================================================
+    // REGOLE
+    // =========================================================================
+
+    // Sola lettura, e solo per gli admin stessi. Le nomine si fanno dalla
+    // Console o con l'Admin SDK: mai dal client.
+    match /admins/{adminId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /users/{userId} {
+      // L'app non scrive mai questo documento. Resta leggibile per non
+      // rompere eventuali strumenti esterni.
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if false;
+
+      match /shifts/{shiftId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create, update: if isOwner(userId) && isValidShift(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /interventions/{interventionId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create, update: if isOwner(userId) && isValidIntervention(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /settings/{settingId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create, update: if isOwner(userId) && isValidSettings(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /solidarityDates/{dateId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create, update: if isOwner(userId) && isValidSolidarityDate(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    // Nega tutto il resto, incluso il vecchio /test/connection.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

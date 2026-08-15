@@ -1,0 +1,117 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-headline: "Manrope", sans-serif;
+
+  --color-surface: #0e0e0e;
+  --color-surface-dim: #0e0e0e;
+  --color-surface-bright: #2b2c2c;
+  --color-surface-container-lowest: #000000;
+  --color-surface-container-low: #131313;
+  --color-surface-container: #191a1a;
+  --color-surface-container-high: #1f2020;
+  --color-surface-container-highest: #252626;
+
+  --color-primary: #abcbdc;
+  --color-primary-container: #2b4b59;
+  --color-on-primary: #244452;
+  --color-on-primary-container: #b4d5e6;
+
+  --color-secondary: #9f9d9d;
+  --color-on-secondary: #202020;
+
+  --color-error: #ee7d77;
+  --color-error-dim: #bb5551;
+  /* Mancavano: bg-error-container e text-on-error erano usate in Calendar.tsx
+     e UserProfileModal.tsx ma non risolvevano ad alcuna classe. */
+  --color-error-container: #8c1d18;
+  --color-on-error: #2b0d0c;
+  --color-on-error-container: #f9dedc;
+
+  --color-outline: #767575;
+  --color-outline-variant: #484848;
+
+  --color-on-surface: #e7e5e5;
+  --color-on-surface-variant: #acabaa;
+
+  /* Fallbacks for html2canvas compatibility (Tailwind v4 uses oklch by default) */
+  --color-emerald-500: #10b981;
+  --color-emerald-400: #34d399;
+  --color-emerald-600: #059669;
+}
+
+@layer base {
+  body {
+    @apply bg-surface text-on-surface font-sans antialiased;
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-surface-container/80 backdrop-blur-xl border border-outline-variant/10;
+  }
+  .architectural-shadow {
+    box-shadow: 0 24px 40px rgba(0, 0, 0, 0.06);
+  }
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  
+  body {
+    background-color: white !important;
+    color: black !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  
+  main {
+    padding-left: 0 !important;
+    width: 100% !important;
+  }
+
+  .p-8 {
+    padding: 1rem !important;
+  }
+
+  .max-w-7xl, .max-w-6xl {
+    max-width: 100% !important;
+  }
+
+  /* Force background colors for charts if needed, but usually better to keep it clean */
+  .bg-surface-container-low, .bg-surface-container-high {
+    background-color: #f9f9f9 !important;
+    border: 1px solid #eee !important;
+    box-shadow: none !important;
+  }
+
+  .text-on-surface, .text-on-surface-variant {
+    color: #111 !important;
+  }
+
+  .text-primary {
+    color: #2b4b59 !important;
+  }
+
+  table {
+    page-break-inside: auto;
+  }
+  
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  /* Ensure charts are visible but not too dark */
+  .recharts-cartesian-grid-horizontal line,
+  .recharts-cartesian-grid-vertical line {
+    stroke: #ddd !important;
+  }
+}
