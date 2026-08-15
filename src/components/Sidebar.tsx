@@ -21,7 +21,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
       {/* Stessa altezza dell'header (h-16) e stesso padding orizzontale (px-8):
           il marchio e il titolo condividono l'asse verticale, e il bordo
           inferiore prosegue quello dell'header senza scalini. */}
-      <div className="h-16 flex items-center px-8 border-b border-outline-variant/10">
+      <div className="flex items-center px-8 border-b border-outline-variant/10 safe-area-top" style={{ minHeight: 'calc(4rem + env(safe-area-inset-top,0px))' }}>
         <Brand size={34} />
       </div>
 

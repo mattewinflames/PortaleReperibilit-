@@ -105,7 +105,7 @@ export function Header({
   }, []);
 
   return (
-    <header className="w-full h-16 sticky top-0 z-50 glass flex justify-between items-center px-4 md:px-8 font-headline transition-all duration-300 no-print">
+    <header className="w-full sticky top-0 z-50 glass flex justify-between items-center px-4 md:px-8 font-headline transition-all duration-300 no-print safe-area-top" style={{ minHeight: 'calc(4rem + env(safe-area-inset-top,0px))' }}>
       <div className="flex items-center gap-4">
         <h1 className="text-sm md:text-lg font-bold text-on-surface truncate max-w-[150px] md:max-w-none">Reperibilità & Interventi</h1>
       </div>

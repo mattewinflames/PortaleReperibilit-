@@ -526,7 +526,7 @@ export default function App() {
         <Sidebar currentView={currentView} onViewChange={setCurrentView} />
         <BottomNav currentView={currentView} onViewChange={setCurrentView} />
 
-        <main className="md:pl-64 min-h-screen flex flex-col pb-20 md:pb-0">
+        <main className="md:pl-64 min-h-screen flex flex-col pb-20 md:pb-0 safe-area-x">
           <Header
             onSettingsClick={() => setCurrentView('settings')}
             onProfileClick={() => setIsProfileModalOpen(true)}
