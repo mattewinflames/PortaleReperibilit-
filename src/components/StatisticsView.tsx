@@ -2,6 +2,8 @@ import React, { useState, useMemo, useRef } from 'react';
 import { motion } from 'motion/react';
 import { 
   TrendingUp, 
+  TrendingDown,
+  Minus,
   Clock, 
   Zap, 
   CalendarDays, 
@@ -31,6 +33,7 @@ import {
   ReferenceArea,
 } from 'recharts';
 import { cn } from '../lib/utils';
+import { TREND_MONTHS, classifyTrend, trendWindow } from '../lib/trend';
 import {
   breakdown,
   buildHoursIndex,
@@ -126,6 +129,31 @@ export function StatisticsView({ shifts, interventions, settings }: StatisticsVi
 
   const maskOnCall = selectedCategory === 'Solo Interventi';
   const maskIntervention = selectedCategory === 'Solo Reperibilità';
+
+  /**
+   * Trend del grafico "Distribuzione Ore": ultimi 3 mesi completi contro
+   * gli stessi mesi dell'anno prima, con il filtro di categoria applicato.
+   */
+  const hoursTrend = useMemo(() => {
+    const w = trendWindow(selectedYear, new Date());
+    if (!w) return null;
+    const hoursIn = (year: number) => {
+      const b = breakdown(hoursIndex, {
+        start: startOfLocalDay(year, w.month, 1),
+        end: startOfLocalDay(year, w.month + TREND_MONTHS, 1),
+      });
+      return (maskOnCall ? 0 : b.onCallHours) + (maskIntervention ? 0 : b.interventionHours);
+    };
+    const current = hoursIn(w.year);
+    const previous = hoursIn(w.year - 1);
+    const first = new Date(w.year, w.month, 1);
+    const last = new Date(w.year, w.month + TREND_MONTHS - 1, 1);
+    const period =
+      first.getFullYear() === last.getFullYear()
+        ? `${format(first, 'MMM', { locale: it })}–${format(last, 'MMM yyyy', { locale: it })}`
+        : `${format(first, 'MMM yyyy', { locale: it })}–${format(last, 'MMM yyyy', { locale: it })}`;
+    return { ...classifyTrend(current, previous), current, previous, period };
+  }, [hoursIndex, selectedYear, maskOnCall, maskIntervention]);
 
   /** Ore del periodo confrontabile, per l'anno indicato. */
   const periodHours = (year: number) => {
@@ -660,11 +688,33 @@ export function StatisticsView({ shifts, interventions, settings }: StatisticsVi
         {/* Hour Distribution Chart */}
         <div className="p-8 rounded-3xl bg-surface-container-low border border-outline-variant/10 architectural-shadow">
           <div className="flex items-center justify-between mb-10">
-            <h3 className="text-xl font-bold font-headline">Distribuzione Ore</h3>
-            <div className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-500 text-[10px] font-bold uppercase tracking-widest flex items-center gap-1">
-              <TrendingUp className="w-3 h-3" />
-              Trend Positivo
+            <div>
+              <h3 className="text-xl font-bold font-headline">Distribuzione Ore</h3>
+              {hoursTrend && hoursTrend.kind !== 'none' && (
+                <p className="text-[10px] text-on-surface-variant mt-1">
+                  {hoursTrend.period}: {formatDuration(hoursTrend.current)} contro {formatDuration(hoursTrend.previous)} un anno prima
+                </p>
+              )}
             </div>
+            {hoursTrend && (
+              <div
+                className={cn(
+                  'px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 shrink-0',
+                  hoursTrend.kind === 'up' && 'bg-emerald-500/10 text-emerald-500',
+                  hoursTrend.kind === 'down' && 'bg-error/10 text-error',
+                  (hoursTrend.kind === 'flat' || hoursTrend.kind === 'none') && 'bg-surface-container-highest text-on-surface-variant',
+                )}
+                title={`Ultimi ${TREND_MONTHS} mesi completi rispetto agli stessi mesi dell'anno precedente`}
+              >
+                {hoursTrend.kind === 'up' && <TrendingUp className="w-3 h-3" />}
+                {hoursTrend.kind === 'down' && <TrendingDown className="w-3 h-3" />}
+                {(hoursTrend.kind === 'flat' || hoursTrend.kind === 'none') && <Minus className="w-3 h-3" />}
+                {hoursTrend.kind === 'up' && `Trend positivo +${Math.round(hoursTrend.pct)}%`}
+                {hoursTrend.kind === 'down' && `Trend negativo ${Math.round(hoursTrend.pct)}%`}
+                {hoursTrend.kind === 'flat' && 'Trend stabile'}
+                {hoursTrend.kind === 'none' && 'Nessun confronto'}
+              </div>
+            )}
           </div>
           
           <div className="h-72 w-full">
