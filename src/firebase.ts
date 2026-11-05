@@ -15,14 +15,21 @@ const app = initializeApp(firebaseConfig);
  * disponibili anche senza rete — il caso d'uso principale per un'app
  * di reperibilità consultata in cantina o in sala macchine.
  */
-export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager(),
-  }),
-  ...(firebaseConfig.firestoreDatabaseId
-    ? { databaseId: firebaseConfig.firestoreDatabaseId }
-    : {}),
-});
+/**
+ * Il database non è quello di default: il suo ID va passato come TERZO
+ * argomento di initializeFirestore, separato dalle impostazioni.
+ * Dentro l'oggetto settings viene ignorato e l'SDK cerca '(default)',
+ * che in questo progetto non esiste.
+ */
+export const db = initializeFirestore(
+  app,
+  {
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager(),
+    }),
+  },
+  firebaseConfig.firestoreDatabaseId,
+);
 
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();

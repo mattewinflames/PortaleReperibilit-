@@ -6,3 +6,7 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Cache del CLI Firebase
+.firebase/
+firebase-debug.log
