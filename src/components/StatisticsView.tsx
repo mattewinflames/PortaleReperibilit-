@@ -39,6 +39,7 @@ import {
   monthRange,
   startOfLocalDay,
   yearRange,
+  formatDuration,
 } from '../lib/hours';
 import { format } from 'date-fns';
 import { it } from 'date-fns/locale';
@@ -626,7 +627,7 @@ export function StatisticsView({ shifts, interventions, settings }: StatisticsVi
                     boxShadow: '0 20px 40px rgba(0,0,0,0.4)'
                   }}
                   itemStyle={{ fontWeight: 700 }}
-                  formatter={(value, name) => [`${Number(value ?? 0).toFixed(1)}h`, String(name).replace('year_', 'Anno ')]}
+                  formatter={(value, name) => [formatDuration(Number(value ?? 0)), String(name).replace('year_', 'Anno ')]}
                   labelFormatter={(label) => <span className="font-bold text-primary">{label}</span>}
                 />
                 <Legend 
@@ -690,6 +691,9 @@ export function StatisticsView({ shifts, interventions, settings }: StatisticsVi
                     borderRadius: '16px',
                     fontSize: '12px'
                   }}
+                  itemStyle={{ fontWeight: 700 }}
+                  formatter={(value) => [formatDuration(Number(value ?? 0)), 'Totale']}
+                  labelFormatter={(label) => <span className="font-bold text-primary">{label}</span>}
                 />
                 <Area 
                   type="monotone" 
@@ -775,7 +779,7 @@ export function StatisticsView({ shifts, interventions, settings }: StatisticsVi
                             {d.date} · {d.time}
                           </p>
                           <p className="text-[11px] text-primary font-bold mt-1">
-                            {d.duration.toFixed(2).replace('.', ',')} h
+                            {formatDuration(d.duration)}
                           </p>
                         </div>
                       );
