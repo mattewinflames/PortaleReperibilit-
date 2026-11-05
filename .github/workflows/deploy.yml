@@ -1,0 +1,55 @@
+# Pubblica su Firebase Hosting a ogni push sul branch main.
+#
+# Prerequisito (una volta sola, dal proprio PC):
+#   firebase init hosting:github
+# crea l'account di servizio e salva la chiave nel segreto
+# FIREBASE_SERVICE_ACCOUNT_GEN_LANG_CLIENT_0209118224.
+# Finché il segreto non esiste, il workflow esegue la build ma salta il deploy.
+#
+# Pubblica solo l'hosting: le regole Firestore restano un deploy manuale
+# (firebase deploy --only firestore), così un push non può toccarle per errore.
+
+name: Deploy su Firebase Hosting
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Un solo deploy alla volta: se arrivano due push ravvicinati, vince l'ultimo.
+concurrency:
+  group: firebase-hosting
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      HAS_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_GEN_LANG_CLIENT_0209118224 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Installazione dipendenze
+        run: npm ci
+
+      # tsc --noEmit && vite build: se il codice non compila, niente deploy.
+      - name: Build
+        run: npm run build
+
+      - name: Deploy su Firebase Hosting
+        if: env.HAS_SERVICE_ACCOUNT == 'true'
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_GEN_LANG_CLIENT_0209118224 }}
+          projectId: gen-lang-client-0209118224
+          channelId: live
+
+      - name: Segreto mancante
+        if: env.HAS_SERVICE_ACCOUNT != 'true'
+        run: echo "::warning::Build riuscita, deploy saltato. Esegui 'firebase init hosting:github' per creare il segreto."
