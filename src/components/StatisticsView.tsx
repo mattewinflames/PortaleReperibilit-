@@ -26,7 +26,6 @@ import {
   ResponsiveContainer,
   AreaChart,
   Area,
-  Legend,
   ScatterChart,
   Scatter,
   ZAxis,
@@ -93,7 +92,9 @@ export function StatisticsView({ shifts, interventions, settings }: StatisticsVi
     return Array.from(years).sort((a, b) => b - a);
   }, [shifts, interventions]);
 
-  const [selectedYear, setSelectedYear] = useState(availableYears[0]);
+  // L'anno in corso, non il più alto: il piano Infoweb arriva già nell'anno dopo,
+  // e aprire la pagina su un anno senza mesi completi non mostra nulla di utile.
+  const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
   const [selectedCategory, setSelectedCategory] = useState('Tutte le Attività');
   
   // Rates
@@ -657,16 +658,6 @@ export function StatisticsView({ shifts, interventions, settings }: StatisticsVi
                   itemStyle={{ fontWeight: 700 }}
                   formatter={(value, name) => [formatDuration(Number(value ?? 0)), String(name).replace('year_', 'Anno ')]}
                   labelFormatter={(label) => <span className="font-bold text-primary">{label}</span>}
-                />
-                <Legend 
-                  verticalAlign="top" 
-                  align="right"
-                  iconType="circle"
-                  wrapperStyle={{ paddingBottom: '20px' }}
-                  formatter={(value) => {
-                    const year = value.replace('year_', '');
-                    return <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Anno {year}</span>;
-                  }}
                 />
                 {availableYears.map((year, idx) => (
                   <Area
