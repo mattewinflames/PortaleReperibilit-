@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
-import { Wallet, Save, CheckCircle2, AlertCircle, RotateCcw, Heart, Upload, Trash2 } from 'lucide-react';
+import { Wallet, Save, CheckCircle2, AlertCircle, RotateCcw, Heart, Upload, Trash2, Plus } from 'lucide-react';
 import { Settings, SolidarityDate } from '../types';
 import { format } from 'date-fns';
 import { cn } from '../lib/utils';
+import { makeSolidarityDate } from '../lib/solidarity';
 
 interface SettingsViewProps {
   solidarityDates: SolidarityDate[];
@@ -30,6 +31,31 @@ export function SettingsView({
   const [importStatus, setImportStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
   const [isImportingSolidarity, setIsImportingSolidarity] = useState(false);
   const solidarityInputRef = useRef<HTMLInputElement>(null);
+  const [manualSolidarityDate, setManualSolidarityDate] = useState('');
+  const [isAddingSolidarity, setIsAddingSolidarity] = useState(false);
+
+  /** Aggiunta manuale di una singola data, in formato AAAA-MM-GG dal campo data. */
+  const handleAddManualSolidarity = async () => {
+    const [y, m, d] = manualSolidarityDate.split('-').map(Number);
+    if (!y || !m || !d) return;
+    const date = makeSolidarityDate(y, m - 1, d);
+    if (solidarityDates.some((s) => s.id === date.id)) {
+      setImportStatus({ type: 'error', message: `Il ${format(new Date(y, m - 1, d), 'dd/MM/yyyy')} è già una giornata di solidarietà.` });
+      setTimeout(() => setImportStatus(null), 5000);
+      return;
+    }
+    setIsAddingSolidarity(true);
+    try {
+      await onAddSolidarityDates([date]);
+      setManualSolidarityDate('');
+      setImportStatus({ type: 'success', message: `Aggiunto il ${format(new Date(y, m - 1, d), 'dd/MM/yyyy')}.` });
+    } catch {
+      setImportStatus({ type: 'error', message: 'Salvataggio non riuscito.' });
+    } finally {
+      setIsAddingSolidarity(false);
+      setTimeout(() => setImportStatus(null), 5000);
+    }
+  };
 
   // Prima ne venivano mostrate solo 8, e le altre non erano cancellabili.
   const sortedSolidarityDates = [...solidarityDates].sort((a, b) => a.dateStr.localeCompare(b.dateStr));
@@ -244,8 +270,8 @@ export function SettingsView({
                 <Heart className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-xl font-bold font-headline">Importa Solidarietà</h3>
-                <p className="text-[10px] text-on-surface-variant uppercase tracking-widest font-bold mt-1">Gestione giorni di solidarietà (.ics)</p>
+                <h3 className="text-xl font-bold font-headline">Giornate di Solidarietà</h3>
+                <p className="text-[10px] text-on-surface-variant uppercase tracking-widest font-bold mt-1">Import da .ics e modifiche manuali</p>
               </div>
             </div>
             
@@ -270,13 +296,36 @@ export function SettingsView({
           <div className="space-y-4">
             <p className="text-sm text-on-surface-variant leading-relaxed">
               Carica il file del calendario per visualizzare i giorni di solidarietà direttamente nel tuo calendario. 
-              I giorni verranno evidenziati in <b>Verde Smeraldo</b>.
+              I giorni verranno evidenziati in <b>Verde Smeraldo</b>. Puoi anche aggiungere o togliere una
+              singola data qui sotto, oppure direttamente dal giorno nel calendario.
+            </p>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <input
+                type="date"
+                value={manualSolidarityDate}
+                onChange={(e) => setManualSolidarityDate(e.target.value)}
+                aria-label="Data di solidarietà da aggiungere"
+                className="bg-surface-container-lowest border border-outline-variant/20 rounded-xl px-4 py-2.5 text-sm text-on-surface [color-scheme:dark] focus:outline-none focus:border-emerald-500/60"
+              />
+              <button
+                onClick={handleAddManualSolidarity}
+                disabled={!manualSolidarityDate || isAddingSolidarity}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-emerald-500 border border-emerald-500/30 hover:bg-emerald-500/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Plus className="w-4 h-4" />
+                Aggiungi data
+              </button>
+            </div>
+
+            <p className="text-[11px] text-on-surface-variant/70">
+              Attenzione: reimportare il file .ics riaggiunge tutte le date che contiene, comprese quelle tolte a mano.
             </p>
 
             {solidarityDates.length > 0 && (
               <div className="pt-4 border-t border-outline-variant/10">
                 <div className="flex items-center justify-between mb-4">
-                  <h4 className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">Date Importate ({solidarityDates.length})</h4>
+                  <h4 className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">Date ({solidarityDates.length})</h4>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-72 overflow-y-auto pr-1">
                   {sortedSolidarityDates.map((date) => (

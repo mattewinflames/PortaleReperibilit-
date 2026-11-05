@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { ChevronLeft, ChevronRight, Plus, Clock, Zap, Shield, Settings2, X, RotateCcw, Trash2, ChevronDown, Heart } from 'lucide-react';
 import { Shift, Intervention, SolidarityDate } from '../types';
 import { cn } from '../lib/utils';
+import { makeSolidarityDate } from '../lib/solidarity';
 import { breakdownForDay, buildHoursIndex, calculateDuration, formatDuration, shiftDurationHours } from '../lib/hours';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -29,6 +30,9 @@ interface CalendarViewProps {
   onAddIntervention: (intervention: Omit<Intervention, 'id'>) => void;
   onUpdateIntervention: (intervention: Intervention) => void;
   onDeleteIntervention: (id: string) => void;
+  /** Se assenti, il calendario mostra le solidarietà ma non permette di modificarle. */
+  onAddSolidarityDates?: (dates: SolidarityDate[]) => Promise<void>;
+  onDeleteSolidarityDate?: (id: string) => Promise<void>;
 }
 
 const DAYS = ['LUN', 'MAR', 'MER', 'GIO', 'VEN', 'SAB', 'DOM'];
@@ -55,7 +59,9 @@ export function CalendarView({
   onDeleteShift, 
   onAddIntervention,
   onUpdateIntervention,
-  onDeleteIntervention
+  onDeleteIntervention,
+  onAddSolidarityDates,
+  onDeleteSolidarityDate
 }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(() => {
     if (initialDate instanceof Date && !isNaN(initialDate.getTime())) return initialDate;
@@ -145,6 +151,56 @@ export function CalendarView({
       int.month === currentDate.getMonth() && 
       int.year === currentDate.getFullYear()
     );
+  };
+
+  const getSolidarityForDay = (day: number) =>
+    solidarityDates?.find(
+      (d) => d.day === day && d.month === currentDate.getMonth() && d.year === currentDate.getFullYear(),
+    );
+
+  const canEditSolidarity = Boolean(onAddSolidarityDates && onDeleteSolidarityDate);
+  const [isSolidarityBusy, setIsSolidarityBusy] = useState(false);
+
+  /**
+   * Segna o toglie la solidarietà sul giorno selezionato.
+   *
+   * Togliere riapre subito gli inserimenti. Segnare un giorno che ha già
+   * turni o interventi chiede conferma: restano dove sono, ma da quel
+   * momento risultano in conflitto (vedi l'avviso nell'header).
+   */
+  const toggleSolidarity = async (day: number) => {
+    if (!onAddSolidarityDates || !onDeleteSolidarityDate || isSolidarityBusy) return;
+    const existing = getSolidarityForDay(day);
+    const nShifts = getShiftsForDay(day).length;
+    const nInterventions = getInterventionsForDay(day).length;
+
+    if (!existing && nShifts + nInterventions > 0) {
+      const parts = [
+        nShifts > 0 ? `${nShifts} ${nShifts === 1 ? 'turno' : 'turni'}` : '',
+        nInterventions > 0 ? `${nInterventions} ${nInterventions === 1 ? 'intervento' : 'interventi'}` : '',
+      ].filter(Boolean).join(' e ');
+      const ok = window.confirm(
+        `In questo giorno ci sono ${parts}. Resteranno salvati, ma risulteranno in conflitto con la solidarietà. Procedere?`,
+      );
+      if (!ok) return;
+    }
+
+    setIsSolidarityBusy(true);
+    try {
+      if (existing) {
+        await onDeleteSolidarityDate(existing.id);
+        // Senza inserimenti, il giorno torna alla scelta "cosa registrare".
+        if (nShifts + nInterventions === 0) setModalStep('select');
+      } else {
+        await onAddSolidarityDates([makeSolidarityDate(currentDate.getFullYear(), currentDate.getMonth(), day)]);
+        setModalStep('list');
+        setEntryType(null);
+      }
+    } catch {
+      // L'errore Firestore è già mostrato dal banner "Errore di sincronizzazione".
+    } finally {
+      setIsSolidarityBusy(false);
+    }
   };
 
   const isSolidarityDay = (day: number) => {
@@ -568,8 +624,17 @@ export function CalendarView({
                 <div className="space-y-4">
                   {isSolidarityDay(selectedDay!) && (
                     <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-3 mb-4">
-                      <Heart className="w-5 h-5 text-emerald-500" />
-                      <p className="text-sm font-bold text-emerald-500">Giorno di Solidarietà: inserimenti disabilitati.</p>
+                      <Heart className="w-5 h-5 text-emerald-500 shrink-0" />
+                      <p className="text-sm font-bold text-emerald-500 flex-1">Giorno di Solidarietà: inserimenti disabilitati.</p>
+                      {canEditSolidarity && (
+                        <button
+                          onClick={() => toggleSolidarity(selectedDay!)}
+                          disabled={isSolidarityBusy}
+                          className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold text-emerald-500 border border-emerald-500/30 hover:bg-emerald-500/15 transition-colors disabled:opacity-40"
+                        >
+                          Rimuovi
+                        </button>
+                      )}
                     </div>
                   )}
 
@@ -640,6 +705,16 @@ export function CalendarView({
                       Chiudi
                     </button>
                   </div>
+                  {canEditSolidarity && !isSolidarityDay(selectedDay!) && (
+                    <button
+                      onClick={() => toggleSolidarity(selectedDay!)}
+                      disabled={isSolidarityBusy}
+                      className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold text-emerald-500/80 hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors disabled:opacity-40"
+                    >
+                      <Heart className="w-3.5 h-3.5" />
+                      Segna come giornata di solidarietà
+                    </button>
+                  )}
                 </div>
               ) : modalStep === 'select' ? (
                 <div className="grid grid-cols-2 gap-4">
@@ -663,6 +738,16 @@ export function CalendarView({
                     <p className="font-bold mb-1">Intervento</p>
                     <p className="text-xs text-on-surface-variant">Registra un intervento tecnico attivo.</p>
                   </button>
+                  {canEditSolidarity && selectedDay !== null && (
+                    <button
+                      onClick={() => toggleSolidarity(selectedDay!)}
+                      disabled={isSolidarityBusy}
+                      className="col-span-2 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold text-emerald-500/80 hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors disabled:opacity-40"
+                    >
+                      <Heart className="w-3.5 h-3.5" />
+                      Segna come giornata di solidarietà
+                    </button>
+                  )}
                 </div>
               ) : (
                 <motion.div 

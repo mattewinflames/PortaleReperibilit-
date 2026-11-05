@@ -681,6 +681,8 @@ export default function App() {
                       onAddIntervention={onAddIntervention}
                       onUpdateIntervention={onUpdateIntervention}
                       onDeleteIntervention={onDeleteIntervention}
+                      onAddSolidarityDates={onAddSolidarityDates}
+                      onDeleteSolidarityDate={onDeleteSolidarityDate}
                     />
                   </motion.div>
                 ) : currentView === 'interventions-archive' ? (
