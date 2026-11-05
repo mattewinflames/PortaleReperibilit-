@@ -139,6 +139,19 @@ async function main() {
   await it('dateStr malformata rifiutata', () =>
     assertFails(setDoc(doc(alice, `users/${ALICE}/solidarityDates/d2`), { ...validSolidarity, dateStr: '28/12/2026' })));
 
+  console.log('\n-- Ferie --');
+  const validVacation = { id: 'vacation-1', startDate: '2026-08-10', endDate: '2026-08-21', note: null };
+  await it('periodo valido accettato', () =>
+    assertSucceeds(setDoc(doc(alice, `users/${ALICE}/vacations/v1`), validVacation)));
+  await it('data in formato italiano rifiutata', () =>
+    assertFails(setDoc(doc(alice, `users/${ALICE}/vacations/v2`), { ...validVacation, startDate: '10/08/2026' })));
+  await it('nota oltre 200 caratteri rifiutata', () =>
+    assertFails(setDoc(doc(alice, `users/${ALICE}/vacations/v3`), { ...validVacation, note: 'x'.repeat(201) })));
+  await it('campo estraneo rifiutato', () =>
+    assertFails(setDoc(doc(alice, `users/${ALICE}/vacations/v4`), { ...validVacation, ore: 8 })));
+  await it('bob NON legge le ferie di alice', () =>
+    assertFails(getDoc(doc(bob, `users/${ALICE}/vacations/v1`))));
+
   console.log('\n-- Admin --');
   await it('admin via custom claim legge i turni di alice', () =>
     assertSucceeds(getDoc(doc(adminClaim, `users/${ALICE}/shifts/s3`))));
