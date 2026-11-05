@@ -72,6 +72,17 @@ export interface Settings {
   taxPercentage: number;
 }
 
+/**
+ * Un periodo di ferie: giornate intere, estremi inclusi.
+ * Le date sono AAAA-MM-GG, come `SolidarityDate.dateStr`.
+ */
+export interface Vacation {
+  id: string;
+  startDate: string;
+  endDate: string;
+  note?: string | null;
+}
+
 export interface SolidarityDate {
   id: string;
   day: number;

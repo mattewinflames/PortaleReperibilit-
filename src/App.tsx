@@ -12,7 +12,7 @@ import { StatisticsView } from './components/StatisticsView';
 import { ImportData } from './components/ImportData';
 import { InterventionsArchive } from './components/InterventionsArchive';
 import { UserProfileModal } from './components/UserProfileModal';
-import { EarningsDetail, Shift, Intervention, Settings, SolidarityDate } from './types';
+import { EarningsDetail, Shift, Intervention, Settings, SolidarityDate, Vacation } from './types';
 import { motion, AnimatePresence } from 'motion/react';
 import { format } from 'date-fns';
 import { it } from 'date-fns/locale';
@@ -73,6 +73,7 @@ export default function App() {
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [interventions, setInterventions] = useState<Intervention[]>([]);
   const [solidarityDates, setSolidarityDates] = useState<SolidarityDate[]>([]);
+  const [vacations, setVacations] = useState<Vacation[]>([]);
   const [dashboardMonth, setDashboardMonth] = useState(() => new Date());
 
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
@@ -108,6 +109,7 @@ export default function App() {
       setShifts([]);
       setInterventions([]);
       setSolidarityDates([]);
+      setVacations([]);
       setSettings(DEFAULT_SETTINGS);
       return;
     }
@@ -147,11 +149,19 @@ export default function App() {
       (error) => handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/solidarityDates`),
     );
 
+    const vacationsRef = collection(db, 'users', user.uid, 'vacations');
+    const unsubscribeVacations = onSnapshot(
+      vacationsRef,
+      (snapshot) => setVacations(snapshot.docs.map((d) => d.data() as Vacation)),
+      (error) => handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/vacations`),
+    );
+
     return () => {
       unsubscribeShifts();
       unsubscribeInterventions();
       unsubscribeSettings();
       unsubscribeSolidarity();
+      unsubscribeVacations();
     };
   }, [user, isAuthReady]);
 
@@ -511,6 +521,35 @@ export default function App() {
     [user],
   );
 
+  /** Crea o aggiorna un periodo di ferie (stesso ID = stesso documento). */
+  const onSaveVacation = useCallback(
+    async (vacation: Vacation) => {
+      if (!user) return;
+      const path = `users/${user.uid}/vacations/${vacation.id}`;
+      try {
+        await setDoc(doc(db, path), { ...vacation, note: vacation.note?.trim() || null });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, path);
+        throw error;
+      }
+    },
+    [user],
+  );
+
+  const onDeleteVacation = useCallback(
+    async (id: string) => {
+      if (!user) return;
+      const path = `users/${user.uid}/vacations/${id}`;
+      try {
+        await deleteDoc(doc(db, path));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, path);
+        throw error;
+      }
+    },
+    [user],
+  );
+
   // ---------------------------------------------------------------- Render
   if (!isAuthReady) {
     return (
@@ -535,6 +574,7 @@ export default function App() {
             isSolidarityToday={isSolidarityToday}
             shifts={shifts}
             solidarityDates={solidarityDates}
+            vacations={vacations}
           />
 
           {user && (
@@ -638,6 +678,7 @@ export default function App() {
                           shifts={shifts}
                           interventions={interventions}
                           solidarityDates={solidarityDates}
+                          vacations={vacations}
                           month={dashboardMonth}
                           onViewAll={handleViewCalendar}
                           onDayClick={handleDayClick}
@@ -683,6 +724,9 @@ export default function App() {
                       onDeleteIntervention={onDeleteIntervention}
                       onAddSolidarityDates={onAddSolidarityDates}
                       onDeleteSolidarityDate={onDeleteSolidarityDate}
+                      vacations={vacations}
+                      onSaveVacation={onSaveVacation}
+                      onDeleteVacation={onDeleteVacation}
                     />
                   </motion.div>
                 ) : currentView === 'interventions-archive' ? (

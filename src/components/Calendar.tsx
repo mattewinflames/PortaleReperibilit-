@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react';
-import { Shift, Intervention, SolidarityDate } from '../types';
+import { ChevronLeft, ChevronRight, RotateCcw, TriangleAlert } from 'lucide-react';
+import { Shift, Intervention, SolidarityDate, Vacation } from '../types';
 import { cn } from '../lib/utils';
+import { findVacationForDay } from '../lib/vacations';
+import { CONFLICT_BORDER, TONE_BADGE, TONE_CELL, TONE_NUMBER, dayTone } from '../lib/day-tone';
 import { buildHoursIndex, breakdownForDay, hasShiftOnDay } from '../lib/hours';
 import { format, addMonths, subMonths, startOfMonth, getDay, getDaysInMonth, isSameMonth } from 'date-fns';
 import { it } from 'date-fns/locale';
@@ -10,6 +12,7 @@ interface CalendarProps {
   shifts: Shift[];
   interventions: Intervention[];
   solidarityDates?: SolidarityDate[];
+  vacations?: Vacation[];
   month?: Date;
   onViewAll?: () => void;
   onDayClick?: (day: number, month: Date) => void;
@@ -22,6 +25,7 @@ export function Calendar({
   shifts,
   interventions,
   solidarityDates,
+  vacations,
   month,
   onViewAll,
   onDayClick,
@@ -137,11 +141,20 @@ export function Calendar({
               (d) => d.day === day && d.month === monthIndex && d.year === year,
             );
             const isWeekendShift = isWeekendShiftOnDay(day);
+            const isVacation = Boolean(findVacationForDay(vacations, year, monthIndex, day));
+            const { tone, conflict } = dayTone({
+              isVacation,
+              isSolidarity: Boolean(isSolidarity),
+              isWeekendShift,
+              onCallHours,
+            });
 
             const label = [
               format(new Date(year, monthIndex, day), 'EEEE d MMMM yyyy', { locale: it }),
               covered ? `${onCallHours.toFixed(1)} ore di reperibilità` : 'nessun turno',
+              isVacation ? 'ferie' : '',
               isSolidarity ? 'giorno di solidarietà' : '',
+              conflict ? 'in conflitto' : '',
             ]
               .filter(Boolean)
               .join(', ');
@@ -156,33 +169,20 @@ export function Calendar({
                 className={cn(
                   'aspect-square p-1 sm:p-2 rounded-lg sm:rounded-xl border flex flex-col justify-between text-left transition-all hover:scale-105 cursor-pointer',
                   'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface',
-                  isWeekendShift
-                    ? 'bg-error-container/20 border-error/20'
-                    : isSolidarity
-                      ? 'bg-emerald-500/20 border-emerald-500/40'
-                      : onCallHours > 0
-                        ? 'bg-surface-container-high border-primary/10'
-                        : 'bg-surface-container-high border-outline-variant/10',
+                  TONE_CELL[tone],
+                  conflict && CONFLICT_BORDER,
                   today && 'ring-2 ring-primary ring-offset-2 ring-offset-surface',
                 )}
               >
-                <span
-                  className={cn(
-                    'text-[10px] sm:text-xs font-bold',
-                    isWeekendShift ? 'text-error' : isSolidarity ? 'text-emerald-400' : 'text-on-surface',
-                  )}
-                >
-                  {day}
+                <span className="flex items-center justify-between gap-0.5">
+                  <span className={cn('text-[10px] sm:text-xs font-bold', TONE_NUMBER[tone])}>{day}</span>
+                  {conflict && <TriangleAlert className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-amber-400 shrink-0" aria-hidden="true" />}
                 </span>
                 {onCallHours > 0 && (
                   <div
                     className={cn(
                       'text-[8px] sm:text-[10px] font-bold px-1 sm:px-1.5 py-0.5 rounded text-center w-full',
-                      isWeekendShift
-                        ? 'bg-error text-on-error'
-                        : isSolidarity
-                          ? 'bg-emerald-500/30 text-emerald-400'
-                          : 'bg-primary/20 text-primary',
+                      TONE_BADGE[tone],
                     )}
                   >
                     {onCallHours.toFixed(1).replace('.0', '')}h

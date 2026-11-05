@@ -4,8 +4,9 @@ import { signIn, logOut } from '../firebase';
 import { cn } from '../lib/utils';
 import { dayRange, formatDuration, shiftInterval } from '../lib/hours';
 import { ShiftArc } from './ShiftArc';
+import { formatIsoDate, vacationConflicts } from '../lib/vacations';
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { Shift, SolidarityDate } from '../types';
+import { Shift, SolidarityDate, Vacation } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { format } from 'date-fns';
 import { it } from 'date-fns/locale';
@@ -18,6 +19,7 @@ interface HeaderProps {
   isSolidarityToday?: boolean;
   shifts: Shift[];
   solidarityDates: SolidarityDate[];
+  vacations?: Vacation[];
 }
 
 export function Header({ 
@@ -27,7 +29,8 @@ export function Header({
   isTodayOnCall, 
   isSolidarityToday,
   shifts,
-  solidarityDates
+  solidarityDates,
+  vacations = []
 }: HeaderProps) {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const notificationRef = useRef<HTMLDivElement>(null);
@@ -45,7 +48,7 @@ export function Header({
   }, [shifts]);
 
   /**
-   * Conflitti fra turni e giornate di solidarietà.
+   * Conflitti fra turni e giornate di solidarietà o periodi di ferie.
    *
    * Prima il controllo confrontava solo le DATE:
    *
@@ -61,7 +64,7 @@ export function Header({
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
-    const list: { key: string; date: Date; shift: Shift; hours: number }[] = [];
+    const list: { key: string; kind: 'solidarity' | 'vacation'; date: Date; shift: Shift; hours: number; detail?: string }[] = [];
 
     for (const shift of shifts) {
       const iv = shiftInterval(shift);
@@ -78,11 +81,25 @@ export function Header({
 
         list.push({
           key: `${sol.year}-${sol.month}-${sol.day}-${shift.day}-${shift.startTime}`,
+          kind: 'solidarity',
           date: new Date(sol.year, sol.month, sol.day),
           shift,
           hours: (overlapEnd - overlapStart) / 3_600_000,
         });
       }
+    }
+
+    // Turni dentro un periodo di ferie: una voce per coppia turno/periodo,
+    // con le sole ore che cadono nelle ferie.
+    for (const c of vacationConflicts(shifts, vacations, todayStart.getTime())) {
+      list.push({
+        key: c.key,
+        kind: 'vacation',
+        date: c.from,
+        shift: c.shift,
+        hours: c.hours,
+        detail: `ferie dal ${formatIsoDate(c.vacation.startDate)} al ${formatIsoDate(c.vacation.endDate)}`,
+      });
     }
 
     // Il dedup di prima scartava per DATA, nascondendo il secondo turno in
@@ -91,7 +108,7 @@ export function Header({
     return list
       .filter((c) => (seen.has(c.key) ? false : seen.add(c.key)))
       .sort((a, b) => a.date.getTime() - b.date.getTime());
-  }, [shifts, solidarityDates]);
+  }, [shifts, solidarityDates, vacations]);
 
   // Close notification menu on click outside
   useEffect(() => {
@@ -200,7 +217,8 @@ export function Header({
                                 {format(conflict.date, 'EEEE d MMMM', { locale: it })}
                               </p>
                               <p className="text-[10px] text-on-surface-variant mt-1 leading-relaxed">
-                                {formatDuration(conflict.hours)} di reperibilità ({conflict.shift.startTime}–{conflict.shift.endTime}) in una giornata di solidarietà.
+                                {formatDuration(conflict.hours)} di reperibilità ({conflict.shift.startTime}–{conflict.shift.endTime})
+                                {conflict.kind === 'vacation' ? ` durante le ${conflict.detail}.` : ' in una giornata di solidarietà.'}
                               </p>
                               <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-error/10 text-error text-[9px] font-bold uppercase tracking-tighter">
                                 Da Sistemare
@@ -216,7 +234,7 @@ export function Header({
                         </div>
                         <p className="text-xs font-bold text-on-surface">Nessun conflitto</p>
                         <p className="text-[10px] text-on-surface-variant mt-1">
-                          Ottimo lavoro! Non ci sono turni in conflitto con i giorni di solidarietà.
+                          Ottimo lavoro! Non ci sono turni in conflitto con solidarietà o ferie.
                         </p>
                       </div>
                     )}
@@ -225,7 +243,7 @@ export function Header({
                   {conflicts.length > 0 && (
                     <div className="p-3 bg-surface-container-high border-t border-outline-variant/10">
                       <p className="text-[9px] text-center text-on-surface-variant font-medium">
-                        Modifica i turni o le solidarietà nel calendario per risolvere.
+                        Modifica i turni, le solidarietà o le ferie nel calendario per risolvere.
                       </p>
                     </div>
                   )}

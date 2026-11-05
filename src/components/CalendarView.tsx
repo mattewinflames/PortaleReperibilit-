@@ -1,8 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Clock, Zap, Shield, Settings2, X, RotateCcw, Trash2, ChevronDown, Heart } from 'lucide-react';
-import { Shift, Intervention, SolidarityDate } from '../types';
+import { ChevronLeft, ChevronRight, Plus, Clock, Zap, Shield, Settings2, X, RotateCcw, Trash2, ChevronDown, Heart, TreePalm, TriangleAlert, Pencil } from 'lucide-react';
+import { Shift, Intervention, SolidarityDate, Vacation } from '../types';
 import { cn } from '../lib/utils';
 import { makeSolidarityDate } from '../lib/solidarity';
+import { findVacationForDay, formatIsoDate, newVacationId, toIsoDate, validateVacation, vacationDays } from '../lib/vacations';
+import { CONFLICT_BORDER, TONE_BADGE, TONE_CELL, TONE_NUMBER, dayTone } from '../lib/day-tone';
 import { breakdownForDay, buildHoursIndex, calculateDuration, formatDuration, shiftDurationHours } from '../lib/hours';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -33,6 +35,9 @@ interface CalendarViewProps {
   /** Se assenti, il calendario mostra le solidarietà ma non permette di modificarle. */
   onAddSolidarityDates?: (dates: SolidarityDate[]) => Promise<void>;
   onDeleteSolidarityDate?: (id: string) => Promise<void>;
+  vacations?: Vacation[];
+  onSaveVacation?: (vacation: Vacation) => Promise<void>;
+  onDeleteVacation?: (id: string) => Promise<void>;
 }
 
 const DAYS = ['LUN', 'MAR', 'MER', 'GIO', 'VEN', 'SAB', 'DOM'];
@@ -61,7 +66,10 @@ export function CalendarView({
   onUpdateIntervention,
   onDeleteIntervention,
   onAddSolidarityDates,
-  onDeleteSolidarityDate
+  onDeleteSolidarityDate,
+  vacations,
+  onSaveVacation,
+  onDeleteVacation
 }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(() => {
     if (initialDate instanceof Date && !isNaN(initialDate.getTime())) return initialDate;
@@ -70,7 +78,7 @@ export function CalendarView({
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [selectedDay, setSelectedDay] = useState<number | null>(initialSelectedDay || (initialOpenAddIntervention ? new Date().getDate() : null));
   const [isModalOpen, setIsModalOpen] = useState(!!initialSelectedDay || !!initialEditingInterventionId || !!initialOpenAddIntervention);
-  const [modalStep, setModalStep] = useState<'select' | 'form' | 'list'>(
+  const [modalStep, setModalStep] = useState<'select' | 'form' | 'list' | 'vacation'>(
     initialEditingInterventionId ? 'form' : 
     initialOpenAddIntervention ? 'form' :
     (initialSelectedDay ? 'list' : 'select')
@@ -94,6 +102,14 @@ export function CalendarView({
   const [intEnd, setIntEnd] = useState('');
   const [intType, setIntType] = useState<Intervention['type']>('maintenance');
   const [intDate, setIntDate] = useState('');
+
+  // Ferie: intervallo di giornate intere, estremi inclusi.
+  const [vacStart, setVacStart] = useState('');
+  const [vacEnd, setVacEnd] = useState('');
+  const [vacNote, setVacNote] = useState('');
+  const [editingVacationId, setEditingVacationId] = useState<string | null>(null);
+  const [vacError, setVacError] = useState<string | null>(null);
+  const [isVacationBusy, setIsVacationBusy] = useState(false);
 
   // Handle initial editing intervention
   useEffect(() => {
@@ -159,6 +175,70 @@ export function CalendarView({
     );
 
   const canEditSolidarity = Boolean(onAddSolidarityDates && onDeleteSolidarityDate);
+
+  const canEditVacations = Boolean(onSaveVacation && onDeleteVacation);
+  const getVacationForDay = (day: number) =>
+    findVacationForDay(vacations, currentDate.getFullYear(), currentDate.getMonth(), day);
+
+  /** Apre il modulo ferie: vuoto sul giorno scelto, oppure precompilato per modificare. */
+  const openVacationForm = (day: number, existing?: Vacation) => {
+    const iso = toIsoDate(currentDate.getFullYear(), currentDate.getMonth(), day);
+    setEditingVacationId(existing?.id ?? null);
+    setVacStart(existing?.startDate ?? iso);
+    setVacEnd(existing?.endDate ?? iso);
+    setVacNote(existing?.note ?? '');
+    setVacError(null);
+    setModalStep('vacation');
+    setEntryType(null);
+  };
+
+  /** Dopo un salvataggio o un'eliminazione: elenco se il giorno ha ancora qualcosa, altrimenti scelta. */
+  const backFromVacation = (day: number, stillVacation: boolean) => {
+    const hasEntries = getShiftsForDay(day).length > 0 || getInterventionsForDay(day).length > 0;
+    setModalStep(hasEntries || stillVacation || isSolidarityDay(day) ? 'list' : 'select');
+  };
+
+  const handleSaveVacation = async () => {
+    if (!onSaveVacation || isVacationBusy) return;
+    const candidate: Vacation = {
+      id: editingVacationId ?? newVacationId(),
+      startDate: vacStart,
+      endDate: vacEnd,
+      note: vacNote.trim() || null,
+    };
+    const error = validateVacation(candidate, vacations ?? []);
+    if (error) {
+      setVacError(error);
+      return;
+    }
+    setIsVacationBusy(true);
+    try {
+      await onSaveVacation(candidate);
+      const iso = toIsoDate(currentDate.getFullYear(), currentDate.getMonth(), selectedDay!);
+      backFromVacation(selectedDay!, candidate.startDate <= iso && iso <= candidate.endDate);
+    } catch {
+      setVacError('Salvataggio non riuscito.');
+    } finally {
+      setIsVacationBusy(false);
+    }
+  };
+
+  const handleDeleteVacation = async (vacation: Vacation) => {
+    if (!onDeleteVacation || isVacationBusy) return;
+    const ok = window.confirm(
+      `Eliminare le ferie dal ${formatIsoDate(vacation.startDate)} al ${formatIsoDate(vacation.endDate)}?`,
+    );
+    if (!ok) return;
+    setIsVacationBusy(true);
+    try {
+      await onDeleteVacation(vacation.id);
+      backFromVacation(selectedDay!, false);
+    } catch {
+      // L'errore Firestore è già mostrato dal banner "Errore di sincronizzazione".
+    } finally {
+      setIsVacationBusy(false);
+    }
+  };
   const [isSolidarityBusy, setIsSolidarityBusy] = useState(false);
 
   /**
@@ -234,8 +314,8 @@ export function CalendarView({
     if (dayInterventions.length > 0 || dayShifts.length > 0) {
       setModalStep('list');
       setEntryType(null);
-    } else if (isSolidarityDay(day)) {
-      setModalStep('list'); // Show empty list with solidarity message
+    } else if (isSolidarityDay(day) || getVacationForDay(day)) {
+      setModalStep('list'); // Elenco vuoto con il banner di solidarietà o ferie
       setEntryType(null);
     } else {
       setModalStep('select');
@@ -270,6 +350,12 @@ export function CalendarView({
       if (!shiftStartDate || !shiftStart || !shiftEnd || !shiftEndDate) return;
       if (isSolidarity(shiftStartDate)) {
         alert("Non è possibile inserire reperibilità in un giorno di solidarietà.");
+        return;
+      }
+      const onVacation = vacations?.find((v) => v.startDate <= shiftStartDate && shiftStartDate <= v.endDate);
+      if (onVacation && !window.confirm(
+        `Il ${formatIsoDate(shiftStartDate)} sei in ferie (dal ${formatIsoDate(onVacation.startDate)} al ${formatIsoDate(onVacation.endDate)}). Salvare comunque il turno?`,
+      )) {
         return;
       }
       const [sy, sm, sd] = (shiftStartDate || '').split('-').map(Number);
@@ -408,7 +494,7 @@ export function CalendarView({
               setShiftEndDate(`${tomorrow.getFullYear()}-${(tomorrow.getMonth() + 1).toString().padStart(2, '0')}-${tomorrow.getDate().toString().padStart(2, '0')}`);
               setIntDate(`${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`);
               
-              if (isSolidarityDay(day)) {
+              if (isSolidarityDay(day) || getVacationForDay(day)) {
                 setModalStep('list');
               } else {
                 setModalStep('select');
@@ -455,6 +541,12 @@ export function CalendarView({
                   const isSolidarity = solidarityDates?.some(d => d.day === day && d.month === currentDate.getMonth() && d.year === currentDate.getFullYear());
                   
                   const isWeekendShift = dayShifts.some(s => s.type === 'weekend');
+                  const { tone, conflict } = dayTone({
+                    isVacation: Boolean(getVacationForDay(day)),
+                    isSolidarity: Boolean(isSolidarity),
+                    isWeekendShift,
+                    onCallHours: dayHours,
+                  });
                   
                   return (
                     <motion.div 
@@ -463,28 +555,21 @@ export function CalendarView({
                       onClick={() => handleDayClick(day)}
                       className={cn(
                         "aspect-[4/3] p-1.5 sm:p-4 rounded-lg sm:rounded-2xl border flex flex-col gap-1 sm:gap-2 transition-all cursor-pointer group relative",
-                        isWeekendShift ? "bg-error-container/10 border-error/20" :
-                        isSolidarity ? "bg-emerald-500/20 border-emerald-500/40" :
-                        dayHours > 0 ? "bg-surface-container-high border-primary/10" :
-                        "bg-surface-container-high border-outline-variant/10 hover:border-primary/30",
+                        TONE_CELL[tone],
+                        tone === 'empty' && "hover:border-primary/30",
+                        conflict && CONFLICT_BORDER,
                         today && "ring-1 sm:ring-2 ring-primary ring-offset-2 sm:ring-offset-4 ring-offset-surface"
                       )}
                     >
                       <div className="flex justify-between items-start">
-                        <span className={cn(
-                          "text-[10px] sm:text-sm font-bold",
-                          isWeekendShift ? "text-error" :
-                          isSolidarity ? "text-emerald-400" :
-                          "text-on-surface"
-                        )}>
+                        <span className={cn("text-[10px] sm:text-sm font-bold flex items-center gap-1", TONE_NUMBER[tone])}>
                           {day}
+                          {conflict && <TriangleAlert className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 text-amber-400" aria-label="Turno in conflitto" />}
                         </span>
                         {dayHours > 0 && (
                           <div className={cn(
                             "text-[7px] sm:text-[10px] font-bold px-1 sm:px-2 py-0.5 rounded-full",
-                            isWeekendShift ? "bg-error text-on-error" :
-                            isSolidarity ? "bg-emerald-500/30 text-emerald-400" :
-                            "bg-primary/20 text-primary"
+                            TONE_BADGE[tone]
                           )}>
                             {dayHours.toFixed(1).replace('.0', '')}h
                           </div>
@@ -583,6 +668,14 @@ export function CalendarView({
           <div className="w-3 h-3 rounded-full bg-emerald-500/20 border border-emerald-500/30" />
           <span className="text-xs text-on-surface-variant font-medium">Solidarietà</span>
         </div>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full bg-violet-500/20 border border-violet-500/40" />
+          <span className="text-xs text-on-surface-variant font-medium">Ferie</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <TriangleAlert className="w-3.5 h-3.5 text-amber-400" />
+          <span className="text-xs text-on-surface-variant font-medium">Turno in ferie o solidarietà</span>
+        </div>
       </div>
 
       {/* Entry Modal */}
@@ -614,13 +707,79 @@ export function CalendarView({
                   {getSelectedFullDate()}
                 </h3>
                 <p className="text-on-surface-variant text-sm">
-                  {modalStep === 'select' ? 'Cosa desideri registrare?' : 
+                  {modalStep === 'vacation' ? (editingVacationId ? 'Modifica il periodo di ferie' : 'Nuovo periodo di ferie') :
+                   modalStep === 'select' ? 'Cosa desideri registrare?' : 
                    modalStep === 'list' ? 'Gestisci gli inserimenti per questo giorno.' :
                    `Nuovo ${entryType === 'oncall' ? 'Turno Reperibilità' : 'Intervento Tecnico'}`}
                 </p>
               </div>
 
-              {modalStep === 'list' ? (
+              {modalStep === 'vacation' ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2">Dal</label>
+                      <input
+                        type="date"
+                        value={vacStart}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setVacStart(v);
+                          // Comodità: se l'inizio supera la fine, la fine lo segue.
+                          if (v && vacEnd && v > vacEnd) setVacEnd(v);
+                          setVacError(null);
+                        }}
+                        className="w-full bg-surface-container-low border border-outline-variant/20 rounded-xl px-4 py-3 focus:outline-none focus:border-violet-400/60 text-on-surface [color-scheme:dark]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2">Al (incluso)</label>
+                      <input
+                        type="date"
+                        value={vacEnd}
+                        min={vacStart || undefined}
+                        onChange={(e) => { setVacEnd(e.target.value); setVacError(null); }}
+                        className="w-full bg-surface-container-low border border-outline-variant/20 rounded-xl px-4 py-3 focus:outline-none focus:border-violet-400/60 text-on-surface [color-scheme:dark]"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2">Nota (facoltativa)</label>
+                    <input
+                      type="text"
+                      value={vacNote}
+                      maxLength={200}
+                      onChange={(e) => setVacNote(e.target.value)}
+                      placeholder="Es. ferie estive"
+                      className="w-full bg-surface-container-low border border-outline-variant/20 rounded-xl px-4 py-3 focus:outline-none focus:border-violet-400/60 text-on-surface"
+                    />
+                  </div>
+
+                  {vacStart && vacEnd && vacEnd >= vacStart && (
+                    <p className="text-xs text-violet-300">
+                      {(() => { const n = vacationDays({ id: '', startDate: vacStart, endDate: vacEnd }); return `${n} ${n === 1 ? 'giorno' : 'giorni'} di ferie`; })()}
+                    </p>
+                  )}
+                  {vacError && <p className="text-xs font-bold text-error">{vacError}</p>}
+
+                  <div className="pt-4 flex gap-3">
+                    <button
+                      onClick={() => backFromVacation(selectedDay!, Boolean(getVacationForDay(selectedDay!)))}
+                      disabled={isVacationBusy}
+                      className="flex-1 py-3 rounded-xl bg-surface-container-highest font-bold text-sm hover:bg-surface-bright transition-colors disabled:opacity-50"
+                    >
+                      Indietro
+                    </button>
+                    <button
+                      onClick={handleSaveVacation}
+                      disabled={isVacationBusy || !vacStart || !vacEnd}
+                      className="flex-[2] py-3 rounded-xl bg-violet-500 text-white font-bold text-sm hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isVacationBusy ? 'Salvataggio...' : editingVacationId ? 'Aggiorna ferie' : 'Salva ferie'}
+                    </button>
+                  </div>
+                </div>
+              ) : modalStep === 'list' ? (
                 <div className="space-y-4">
                   {isSolidarityDay(selectedDay!) && (
                     <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-3 mb-4">
@@ -637,6 +796,45 @@ export function CalendarView({
                       )}
                     </div>
                   )}
+
+                  {(() => {
+                    const v = getVacationForDay(selectedDay!);
+                    if (!v) return null;
+                    const n = vacationDays(v);
+                    return (
+                      <div className="p-4 rounded-xl bg-violet-500/10 border border-violet-500/25 flex items-start gap-3 mb-4">
+                        <TreePalm className="w-5 h-5 text-violet-300 shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-violet-300">
+                            Ferie {n === 1 ? `il ${formatIsoDate(v.startDate)}` : `dal ${formatIsoDate(v.startDate)} al ${formatIsoDate(v.endDate)}`}
+                          </p>
+                          <p className="text-xs text-on-surface-variant mt-0.5">
+                            {n} {n === 1 ? 'giorno' : 'giorni'}{v.note ? ` · ${v.note}` : ''}
+                          </p>
+                        </div>
+                        {canEditVacations && (
+                          <div className="flex gap-1 shrink-0">
+                            <button
+                              onClick={() => openVacationForm(selectedDay!, v)}
+                              disabled={isVacationBusy}
+                              aria-label="Modifica le ferie"
+                              className="p-2 rounded-lg text-violet-300 hover:bg-violet-500/15 transition-colors disabled:opacity-40"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteVacation(v)}
+                              disabled={isVacationBusy}
+                              aria-label="Elimina le ferie"
+                              className="p-2 rounded-lg text-violet-300 hover:text-error hover:bg-error/10 transition-colors disabled:opacity-40"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {getInterventionsForDay(selectedDay!).length > 0 && (
                     <div className="space-y-2">
@@ -705,6 +903,15 @@ export function CalendarView({
                       Chiudi
                     </button>
                   </div>
+                  {canEditVacations && !getVacationForDay(selectedDay!) && (
+                    <button
+                      onClick={() => openVacationForm(selectedDay!)}
+                      className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold text-violet-300/90 hover:text-violet-200 hover:bg-violet-500/10 transition-colors"
+                    >
+                      <TreePalm className="w-3.5 h-3.5" />
+                      Registra ferie
+                    </button>
+                  )}
                   {canEditSolidarity && !isSolidarityDay(selectedDay!) && (
                     <button
                       onClick={() => toggleSolidarity(selectedDay!)}
@@ -738,6 +945,20 @@ export function CalendarView({
                     <p className="font-bold mb-1">Intervento</p>
                     <p className="text-xs text-on-surface-variant">Registra un intervento tecnico attivo.</p>
                   </button>
+                  {canEditVacations && selectedDay !== null && (
+                    <button
+                      onClick={() => openVacationForm(selectedDay!)}
+                      className="col-span-2 p-4 rounded-2xl bg-violet-500/10 border border-violet-500/20 hover:border-violet-500/50 transition-all text-left flex items-center gap-4"
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-violet-500/15 flex items-center justify-center shrink-0">
+                        <TreePalm className="w-5 h-5 text-violet-300" />
+                      </div>
+                      <div>
+                        <p className="font-bold text-sm">Ferie</p>
+                        <p className="text-xs text-on-surface-variant">Un giorno o un intervallo di giorni.</p>
+                      </div>
+                    </button>
+                  )}
                   {canEditSolidarity && selectedDay !== null && (
                     <button
                       onClick={() => toggleSolidarity(selectedDay!)}
